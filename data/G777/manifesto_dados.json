@@ -1,0 +1,15 @@
+{
+  "grupo": "G777",
+  "quantidade_integrantes": 1,
+  "seed_base": 0,
+  "seed_final": 777000,
+  "id_instancia": "9072a122f33a",
+  "arquivos": {
+    "q1_catalogo_G777.csv": "0106943947edb237e0efccdcfe7d5131ed89f569dbfaf639a13b40f3c75e788c",
+    "q1_config_G777.json": "4b535ea68925a584f30477f02d3eb6104ad3d639970785c3bc353b503329419a",
+    "q2_catalogo_G777.csv": "dae6edff0fcfa6fbf260c87950361f8a05ebb670beeffcb788fff7cb391e66ec",
+    "q2_config_G777.json": "c1239a8be99aa58309446b2f172fbe2cb8942ca32aa578250233ce9c9b5e7c18"
+  },
+  "sha256_conjunto": "9072a122f33a5ac0dd775deb5cc7a90f36c21d08df9bf21f9c39564efd6200a7",
+  "aviso": "Os arquivos originais devem ser preservados. Qualquer alteração modificará o hash."
+}
