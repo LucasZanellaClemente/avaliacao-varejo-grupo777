@@ -22,3 +22,30 @@ Parâmetro ajustável: max_frac_aumento.
 
 O giro de estoque é tratado no Greedy: o orçamento promocional vai para os SKUs
 com estoque sobrando, onde cada real investido gera mais caixa adicional.
+
+
+
+
+# Decisões de modelagem — Questão 2
+
+## D6. Incerteza com choques lognormais
+
+Demanda, preço do concorrente e custo logístico recebem um fator aleatório lognormal
+com média 1 e dispersão = sigma do config. Lognormal nunca é negativo.
+
+## D7. DP por SKU
+
+Estado (semana, estoque restante). O estado conjunto dos 24 SKUs seria inviável
+(produto dos estoques). Os SKUs se ligam pelo caixa, medido na validação Monte Carlo.
+gamma = 0,98 valoriza o caixa que entra antes (primeira dívida na semana 4).
+
+## D8. Greedy usa o valor da DP
+
+Benefício do destaque = valor com destaque − V(t, s). Sem isso, o Greedy contava como
+ganho vendas que só eram antecipadas, e o caixa piorava (322 mil → 287 mil).
+Também atualiza o estoque planejado semana a semana para não contar o mesmo ganho duas vezes.
+
+## D9. Validação independente
+
+5.000 cenários com seed diferente da estimativa (seed + 1000).
+Teste de estresse: o plano só falha com demanda 65% abaixo do normal.
