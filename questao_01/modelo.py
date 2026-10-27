@@ -2,6 +2,8 @@ from pathlib import Path
 import json
 import pandas as pd
 
+PAUSA = 0.0  # nível especial: o SKU não é vendido no período (caixa 0, estoque parado)
+
 
 def carregar_dados(pasta, grupo):
     """
@@ -23,9 +25,13 @@ def avaliar_sku(sku, nivel, margem_minima):
     Calcula o resultado de UM SKU em UM nível de preço.
 
     sku: uma linha do catálogo (pandas Series)
-    nivel: multiplicador do preço (ex.: 0.90 = 10% de desconto)
-    margem_minima: ex.: 0.0592 = 5,92%
+    nivel: multiplicador do preço (ex.: 0.90 = 10% de desconto); PAUSA = não vender
+    margem_minima: ex.: 0.0538 = 5,38%
     """
+    if nivel == PAUSA:
+        return {"preco": 0.0, "unidades": 0.0, "margem_unit": 0.0,
+                "margem_pct": 0.0, "caixa": 0.0, "valido": True}
+
     preco = sku["preco_atual"] * nivel
 
     # demanda reage ao preço pela elasticidade (modelo de elasticidade constante)
@@ -49,17 +55,28 @@ def avaliar_sku(sku, nivel, margem_minima):
     }
 
 
-def avaliar_politica(catalogo, niveis, config, max_frac_desconto=0.40):
+def niveis_validos(sku, config):
+    """
+    Níveis permitidos para um SKU: os que respeitam a margem mínima, mais a PAUSA.
+    Reduz o espaço de busca do Brute Force e do GA.
+    """
+    validos = [n for n in config["niveis_preco_relativos"]
+               if avaliar_sku(sku, n, config["margem_minima_percentual"])["valido"]]
+    return validos + [PAUSA]
+
+
+def avaliar_politica(catalogo, niveis, config, max_frac_aumento=0.50):
     """
     Avalia uma política completa: um nível de preço para cada SKU.
 
     niveis: lista com um nível por SKU, na mesma ordem do catálogo
-    max_frac_desconto: fração máxima de SKUs com desconto (nível < 1.00)
+    max_frac_aumento: fração máxima de SKUs com aumento de preço (nível > 1.00)
     """
     caixa_total = 0.0
     receita_total = 0.0
-    estoque_restante = 0
-    n_descontos = 0
+    estoque_restante = 0.0
+    n_aumentos = 0
+    n_pausados = 0
     todos_validos = True
 
     for i, nivel in enumerate(niveis):
@@ -72,17 +89,20 @@ def avaliar_politica(catalogo, niveis, config, max_frac_desconto=0.40):
         caixa_total += r["caixa"]
         receita_total += r["preco"] * r["unidades"]
         estoque_restante += sku["estoque"] - r["unidades"]
-        if nivel < 1.0:
-            n_descontos += 1
+        if nivel > 1.0:
+            n_aumentos += 1
+        if nivel == PAUSA:
+            n_pausados += 1
 
-    respeita_carteira = n_descontos <= max_frac_desconto * len(niveis)
+    respeita_carteira = n_aumentos <= max_frac_aumento * len(niveis)
 
     return {
         "caixa": caixa_total,
         "receita": receita_total,
         "margem_pct": caixa_total / receita_total if receita_total else 0,
         "estoque_restante": estoque_restante,
-        "n_descontos": n_descontos,
+        "n_aumentos": n_aumentos,
+        "n_pausados": n_pausados,
         "valida": todos_validos and respeita_carteira,
         "folga_meta": caixa_total - config["meta_caixa_90d"],
         "cobertura_divida": caixa_total / config["divida_total_90d"],
@@ -91,23 +111,21 @@ def avaliar_politica(catalogo, niveis, config, max_frac_desconto=0.40):
 
 if __name__ == "__main__":
     catalogo, config = carregar_dados("data/G777", "G777")
-    print(catalogo.head())
-    print("SKUs:", len(catalogo))
-    print("Níveis de preço:", config["niveis_preco_relativos"])
-    print("Meta de caixa:", config["meta_caixa_90d"])
+    print("SKUs:", len(catalogo), "| Meta de caixa:", config["meta_caixa_90d"])
 
-    # Teste 1: um SKU em todos os níveis
-    print("\nQ1-001 por nível (nível, preço, unidades, margem/un, margem %, válido)")
-    primeiro = catalogo.iloc[0]
-    for nivel in config["niveis_preco_relativos"]:
-        r = avaliar_sku(primeiro, nivel, config["margem_minima_percentual"])
-        print(nivel, round(r["preco"], 2), round(r["unidades"], 1),
-              round(r["margem_unit"], 2), round(r["margem_pct"] * 100, 1), r["valido"])
+    # Quantos níveis cada SKU pode usar (inclui a pausa)
+    opcoes = [niveis_validos(catalogo.iloc[i], config) for i in range(len(catalogo))]
+    sem_margem = [catalogo.iloc[i]["sku"] for i, o in enumerate(opcoes) if o == [PAUSA]]
+    print("SKUs sem nenhum nível com margem mínima (só podem pausar):", sem_margem)
 
-    # Teste 2: política atual (todos os SKUs no nível 1,00)
-    atual = [1.0] * len(catalogo)
-    r = avaliar_politica(catalogo, atual, config)
-    print("\nCaixa com preços atuais:", round(r["caixa"], 2))
-    print("Meta:", config["meta_caixa_90d"], "| Folga:", round(r["folga_meta"], 2))
+    # Política de referência: preço atual quando possível, senão o menor nível válido, senão pausa
+    referencia = []
+    for o in opcoes:
+        precos = [n for n in o if n != PAUSA]
+        referencia.append(1.0 if 1.0 in precos else (min(precos) if precos else PAUSA))
+
+    r = avaliar_politica(catalogo, referencia, config)
+    print("\nPolítica de referência (sem otimização)")
+    print("Caixa:", round(r["caixa"], 2), "| Folga da meta:", round(r["folga_meta"], 2))
     print("Cobertura da dívida:", round(r["cobertura_divida"] * 100, 1), "%")
-    print("Válida:", r["valida"])
+    print("Aumentos:", r["n_aumentos"], "| Pausados:", r["n_pausados"], "| Válida:", r["valida"])
